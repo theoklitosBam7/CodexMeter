@@ -1,5 +1,9 @@
 import AppKit
 
+private final class FlippedDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 final class LimitsViewController: NSViewController {
     private let state: AppState
     private let stack = NSStackView()
@@ -22,36 +26,36 @@ final class LimitsViewController: NSViewController {
     }
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 470))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 600))
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
 
-        let document = NSView()
+        let document = FlippedDocumentView()
         document.translatesAutoresizingMaskIntoConstraints = false
 
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
         document.addSubview(stack)
         scroll.documentView = document
         root.addSubview(scroll)
 
         NSLayoutConstraint.activate([
-            root.widthAnchor.constraint(equalToConstant: 380),
-            root.heightAnchor.constraint(equalToConstant: 470),
+            root.widthAnchor.constraint(equalToConstant: 420),
+            root.heightAnchor.constraint(equalToConstant: 600),
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: root.topAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            stack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -16)
+            stack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -20)
         ])
 
         view = root
@@ -95,8 +99,6 @@ final class LimitsViewController: NSViewController {
             addLimits(snapshot)
             addSeparator()
             addResets(snapshot)
-            addSeparator()
-            addMainView(makeFooter(snapshot))
         } else if state.isLoading {
             let row = NSStackView()
             row.orientation = .horizontal
@@ -122,6 +124,8 @@ final class LimitsViewController: NSViewController {
             addMainView(makeWrappedLabel(message, color: .secondaryLabelColor))
         }
 
+        addSeparator()
+        addMainView(makeFooter(state.snapshot))
         onSnapshotChanged?(state.snapshot)
     }
 
@@ -135,10 +139,10 @@ final class LimitsViewController: NSViewController {
         let titleBox = NSStackView()
         titleBox.orientation = .vertical
         titleBox.alignment = .leading
-        titleBox.spacing = 1
-        titleBox.addArrangedSubview(makeLabel("Codex Limits", size: 14, weight: .semibold))
+        titleBox.spacing = 4
+        titleBox.addArrangedSubview(makeLabel("Codex limits", size: 17, weight: .semibold))
         if let plan = state.snapshot?.planType {
-            titleBox.addArrangedSubview(makeLabel(plan.uppercased(), size: 10, color: .secondaryLabelColor))
+            titleBox.addArrangedSubview(makeLabel("\(plan.capitalized) plan", size: 12, color: .secondaryLabelColor))
         }
         row.addArrangedSubview(titleBox)
 
@@ -154,8 +158,8 @@ final class LimitsViewController: NSViewController {
             row.addArrangedSubview(spinner)
         }
 
-        let refresh = NSButton(title: "Refresh", target: self, action: #selector(refreshPressed))
-        refresh.bezelStyle = .inline
+        let refresh = makeActionButton("Refresh", action: #selector(refreshPressed))
+        refresh.toolTip = "Read the latest Codex usage"
         refresh.isEnabled = !state.isLoading
         row.addArrangedSubview(refresh)
         return row
@@ -187,13 +191,14 @@ final class LimitsViewController: NSViewController {
         let box = NSStackView()
         box.orientation = .vertical
         box.alignment = .leading
-        box.spacing = 5
+        box.spacing = 8
 
         let top = NSStackView()
         top.orientation = .horizontal
         top.addArrangedSubview(makeLabel(window.kind.rawValue, weight: .medium))
         top.addArrangedSubview(flexibleSpacer())
-        top.addArrangedSubview(makeLabel("\(window.remainingPercent)% left", weight: .medium))
+        top.addArrangedSubview(makeLabel("\(window.remainingPercent)% left", size: 14, weight: .semibold,
+                                         color: window.remainingPercent < 15 ? .systemRed : .labelColor))
         box.addArrangedSubview(top)
         top.translatesAutoresizingMaskIntoConstraints = false
         top.widthAnchor.constraint(equalTo: box.widthAnchor).isActive = true
@@ -204,7 +209,7 @@ final class LimitsViewController: NSViewController {
         progress.minValue = 0
         progress.maxValue = 100
         progress.doubleValue = Double(window.remainingPercent)
-        progress.controlSize = .small
+        progress.controlSize = .regular
         box.addArrangedSubview(progress)
         progress.translatesAutoresizingMaskIntoConstraints = false
         progress.widthAnchor.constraint(equalTo: box.widthAnchor).isActive = true
@@ -271,40 +276,42 @@ final class LimitsViewController: NSViewController {
         let text = NSStackView()
         text.orientation = .vertical
         text.alignment = .leading
-        text.spacing = 2
+        text.spacing = 4
         text.addArrangedSubview(makeLabel(credit.title ?? "Full reset", size: 12))
         if let expires = credit.expiresAt {
-            let expiration = "Expires in \(expires.timeIntervalSinceNow.compactCountdown) · \(formatFullDate(expires))"
-            text.addArrangedSubview(makeLabel(expiration, size: 10, color: .secondaryLabelColor))
+            text.addArrangedSubview(makeLabel(
+                "Expires in \(expires.timeIntervalSinceNow.compactCountdown)",
+                size: 11, color: .secondaryLabelColor
+            ))
+            text.addArrangedSubview(makeLabel(formatFullDate(expires), size: 11, color: .secondaryLabelColor))
         } else {
             text.addArrangedSubview(makeLabel("No expiration supplied", size: 10, color: .secondaryLabelColor))
         }
         row.addArrangedSubview(text)
         row.addArrangedSubview(flexibleSpacer())
 
-        let use = NSButton(title: "Use", target: self, action: #selector(useResetPressed(_:)))
-        use.bezelStyle = .rounded
-        use.controlSize = .small
+        let use = makeActionButton("Use reset", action: #selector(useResetPressed(_:)))
+        use.toolTip = "Use this credit after confirmation"
+        use.setAccessibilityLabel("Use \(credit.title ?? "full reset")")
         use.tag = index
         use.isEnabled = !state.isLoading
         row.addArrangedSubview(use)
         return row
     }
 
-    private func makeFooter(_ snapshot: UsageSnapshot) -> NSView {
+    private func makeFooter(_ snapshot: UsageSnapshot?) -> NSView {
         let row = NSStackView()
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 8
-        row.addArrangedSubview(makeLabel("Updated \(formatTime(snapshot.fetchedAt))", size: 10, color: .secondaryLabelColor))
+        let updateText = snapshot.map { "Updated \(formatTime($0.fetchedAt))" } ?? "Not updated yet"
+        row.addArrangedSubview(makeLabel(updateText, size: 11, color: .secondaryLabelColor))
         row.addArrangedSubview(flexibleSpacer())
 
-        let settings = NSButton(title: "Settings", target: self, action: #selector(settingsPressed))
-        settings.bezelStyle = .inline
+        let settings = makeActionButton("Settings", action: #selector(settingsPressed), prominent: false)
         row.addArrangedSubview(settings)
 
-        let quit = NSButton(title: "Quit", target: self, action: #selector(quitPressed))
-        quit.bezelStyle = .inline
+        let quit = makeActionButton("Quit", action: #selector(quitPressed), prominent: false)
         row.addArrangedSubview(quit)
         return row
     }
@@ -358,6 +365,22 @@ final class LimitsViewController: NSViewController {
         NSApplication.shared.terminate(nil)
     }
 
+    private func makeActionButton(_ title: String, action: Selector, prominent: Bool = true) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.bezelStyle = .rounded
+        button.controlSize = .regular
+        button.font = .systemFont(ofSize: 12, weight: .medium)
+        if prominent {
+            button.bezelColor = .controlAccentColor
+            button.contentTintColor = .white
+        }
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 28).isActive = true
+        return button
+    }
+
     private func flexibleSpacer() -> NSView {
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -382,7 +405,7 @@ final class LimitsViewController: NSViewController {
         let label = makeLabel(text, size: 11, color: color)
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 0
-        label.preferredMaxLayoutWidth = 348
+        label.preferredMaxLayoutWidth = 380
         return label
     }
 
