@@ -66,7 +66,7 @@ struct CodexAppServerClient: Sendable {
         return try body(session)
     }
 
-    private static func parseUsage(_ envelope: [String: Any]) throws -> UsageSnapshot {
+    static func parseUsage(_ envelope: [String: Any]) throws -> UsageSnapshot {
         if let error = envelope["error"] as? [String: Any] {
             throw CodexMeterError.rpc((error["message"] as? String) ?? "Codex request failed")
         }
@@ -93,7 +93,28 @@ struct CodexAppServerClient: Sendable {
             windows.append(LimitWindow(kind: kind, usedPercent: used, durationMinutes: duration, resetsAt: resetDate))
         }
 
-        let creditsBalance = (snapshot?["credits"] as? [String: Any])?["balance"] as? String
+        let credits = (snapshot?["credits"] as? [String: Any]).map { raw in
+            UsageCredits(
+                balance: raw["balance"] as? String,
+                hasCredits: raw["hasCredits"] as? Bool,
+                unlimited: raw["unlimited"] as? Bool
+            )
+        }
+        let individualLimit: SpendControlLimit?
+        if let raw = snapshot?["individualLimit"] as? [String: Any],
+           let limit = raw["limit"] as? String,
+           let used = raw["used"] as? String,
+           let remainingPercent = intValue(raw["remainingPercent"]),
+           let resetsAt = unixDate(raw["resetsAt"]) {
+            individualLimit = SpendControlLimit(
+                limit: limit,
+                used: used,
+                remainingPercent: remainingPercent,
+                resetsAt: resetsAt
+            )
+        } else {
+            individualLimit = nil
+        }
         let resetSummary = result["rateLimitResetCredits"] as? [String: Any]
         let availableResetCount = intValue(resetSummary?["availableCount"]) ?? 0
         let resetCredits: [ResetCredit]?
@@ -124,7 +145,10 @@ struct CodexAppServerClient: Sendable {
             windows: windows,
             availableResetCount: availableResetCount,
             resetCredits: resetCredits,
-            creditsBalance: creditsBalance,
+            credits: credits,
+            individualLimit: individualLimit,
+            spendControlReached: snapshot?["spendControlReached"] as? Bool,
+            rateLimitReachedType: snapshot?["rateLimitReachedType"] as? String,
             fetchedAt: Date()
         )
     }

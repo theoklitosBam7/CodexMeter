@@ -21,7 +21,10 @@ struct LimitsViewChecks {
                             grantedAt: now, expiresAt: now.addingTimeInterval(Double(index + 2) * 604_800),
                             title: "Full reset (Weekly + 5 hr)", detail: nil)
             },
-            creditsBalance: "0",
+            credits: UsageCredits(balance: "0", hasCredits: false, unlimited: false),
+            individualLimit: nil,
+            spendControlReached: nil,
+            rateLimitReachedType: nil,
             fetchedAt: now
         )
         let controller = LimitsViewController(state: state)
@@ -36,10 +39,20 @@ struct LimitsViewChecks {
         precondition(buttons.allSatisfy { $0.frame.height >= 28 })
         let scroll = descendants(controller.view).compactMap { $0 as? NSScrollView }.first!
         precondition(scroll.documentView!.isFlipped)
-        precondition(scroll.documentView!.frame.height <= scroll.contentView.bounds.height,
-                     "Three reset credits and the footer must fit without scrolling")
+        let document = scroll.documentView!
+        scroll.contentView.scroll(to: NSPoint(
+            x: 0, y: max(0, document.frame.height - scroll.contentView.bounds.height)
+        ))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        for button in buttons where ["Settings", "Quit"].contains(button.title) {
+            let frame = document.convert(button.bounds, from: button)
+            precondition(scroll.documentVisibleRect.contains(frame),
+                         "Footer actions must be reachable by scrolling")
+        }
+        scroll.contentView.scroll(to: .zero)
+        scroll.reflectScrolledClipView(scroll.contentView)
         print("PASS: enabled actions have rounded bezels and larger click targets")
-        print("PASS: scroll content starts at the top")
+        print("PASS: scroll content starts at the top and footer actions remain reachable")
 
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             window.appearance = NSAppearance(named: appearance)
@@ -61,6 +74,8 @@ struct LimitsViewChecks {
         precondition(loadingButtons.filter { ["Settings", "Quit"].contains($0.title) }.allSatisfy { $0.isEnabled })
         print("PASS: only data actions are disabled during loading")
 
+        checkWorkspaceViews(state: state, controller: controller, window: window)
+
         state.snapshot = nil
         state.isLoading = false
         state.errorMessage = "Codex CLI was not found. Set its path in Settings."
@@ -69,6 +84,89 @@ struct LimitsViewChecks {
         precondition(errorButtons.contains { $0.title == "Settings" && $0.isEnabled })
         precondition(errorButtons.contains { $0.title == "Quit" && $0.isEnabled })
         print("PASS: Settings and Quit remain available without a snapshot")
+    }
+
+    private static func checkWorkspaceViews(state: AppState, controller: LimitsViewController, window: NSWindow) {
+        state.isLoading = false
+        state.snapshot = try! CodexAppServerClient.parseUsage(["result": ["rateLimits": [
+            "planType": "self_serve_business_usage_based",
+            "credits": ["balance": "1234.50", "hasCredits": true, "unlimited": false],
+            "individualLimit": [
+                "limit": "500", "used": "125.256789", "remainingPercent": 75,
+                "resetsAt": 1_800_000_000
+            ]
+        ]]])
+        state.onChange?()
+        window.contentView?.layoutSubtreeIfNeeded()
+        let businessLabels = labelTexts(controller.view)
+        precondition(businessLabels.contains("Business plan"))
+        precondition(businessLabels.contains("AI credits"))
+        precondition(businessLabels.contains("1234.50 credits"))
+        precondition(businessLabels.contains("Your spending limit"))
+        precondition(businessLabels.contains("125.26 of 500 credits used"))
+        precondition(!businessLabels.contains("125.256789 of 500 credits used"))
+        precondition(businessLabels.contains("75% left"))
+        precondition(businessLabels.contains { $0.hasPrefix("Resets in ") })
+        precondition(!businessLabels.contains("Banked resets"))
+        precondition(!businessLabels.contains("No rate-limit windows were returned by this account."))
+        let progress = descendants(controller.view).compactMap { $0 as? NSProgressIndicator }
+        precondition(progress.contains { !$0.isIndeterminate && $0.doubleValue == 75 })
+        print("PASS: Business AI credits and individual spending limit are separate from banked resets")
+
+        let creditStates: [([String: Any], String)] = [
+            (["hasCredits": true, "unlimited": true, "balance": "0"], "Unlimited"),
+            (["hasCredits": true, "unlimited": false], "Available, balance unavailable"),
+            (["hasCredits": false, "unlimited": false], "No credits available"),
+            ([:], "Balance unavailable")
+        ]
+        for (credits, expectedText) in creditStates {
+            state.snapshot = try! CodexAppServerClient.parseUsage(["result": ["rateLimits": [
+                "planType": "enterprise_cbp_usage_based", "credits": credits
+            ]]])
+            state.onChange?()
+            let labels = labelTexts(controller.view)
+            precondition(labels.contains("Enterprise plan"))
+            precondition(labels.contains(expectedText))
+            precondition(!labels.contains("No AI credits available."), "Unlimited takes precedence over a zero balance")
+            precondition(!labels.contains("Your spending limit"))
+        }
+        print("PASS: unlimited, available, depleted, and unknown credit states")
+
+        state.snapshot = try! CodexAppServerClient.parseUsage(["result": ["rateLimits": [
+            "planType": "enterprise", "spendControlReached": true,
+            "rateLimitReachedType": "workspace_member_usage_limit_reached"
+        ]]])
+        state.onChange?()
+        let missingLabels = labelTexts(controller.view)
+        precondition(missingLabels.contains("Balance unavailable"))
+        precondition(missingLabels.contains("Codex CLI did not return AI credit data for this account."))
+        precondition(missingLabels.contains("Your spending limit has been reached. Contact your workspace owner."))
+        precondition(!missingLabels.contains("0 credits"))
+        print("PASS: unavailable balances and spending restrictions are explicit")
+
+        state.snapshot = try! CodexAppServerClient.parseUsage(["result": [
+            "rateLimits": [
+                "planType": "business",
+                "primary": ["usedPercent": 20, "windowDurationMins": 300]
+            ],
+            "rateLimitResetCredits": ["availableCount": 1, "credits": [[
+                "id": "workspace-reset", "resetType": "codexRateLimits", "status": "available",
+                "grantedAt": 1_700_000_000
+            ]]]
+        ]])
+        state.onChange?()
+        let mixedLabels = labelTexts(controller.view)
+        precondition(mixedLabels.contains("5-hour"))
+        precondition(mixedLabels.contains("80% left"))
+        precondition(mixedLabels.contains("Banked resets"))
+        precondition(descendants(controller.view).compactMap { $0 as? NSButton }.contains {
+            $0.title == "Use reset" && $0.isEnabled
+        })
+        print("PASS: workspace accounts retain returned rate windows and usable banked resets")
+    }
+
+    private static func labelTexts(_ view: NSView) -> [String] {
+        descendants(view).compactMap { ($0 as? NSTextField)?.stringValue }
     }
 
     private static func descendants(_ view: NSView) -> [NSView] {

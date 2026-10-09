@@ -28,17 +28,94 @@ struct ResetCredit: Identifiable, Sendable {
     var isAvailable: Bool { status == "available" }
 }
 
+struct UsageCredits: Sendable {
+    let balance: String?
+    let hasCredits: Bool?
+    let unlimited: Bool?
+}
+
+struct SpendControlLimit: Sendable {
+    let limit: String
+    let used: String
+    let remainingPercent: Int
+    let resetsAt: Date
+
+    var clampedRemainingPercent: Int { max(0, min(100, remainingPercent)) }
+
+    var formattedUsed: String {
+        guard var value = Decimal(string: used, locale: Locale(identifier: "en_US_POSIX")) else {
+            return used
+        }
+        var roundedValue = Decimal()
+        NSDecimalRound(&roundedValue, &value, 2, .plain)
+        return NSDecimalNumber(decimal: roundedValue).stringValue
+    }
+}
+
 struct UsageSnapshot: Sendable {
     let ordinaryUsageAllowed: Bool?
     let planType: String?
     let windows: [LimitWindow]
     let availableResetCount: Int
     let resetCredits: [ResetCredit]?
-    let creditsBalance: String?
+    let credits: UsageCredits?
+    let individualLimit: SpendControlLimit?
+    let spendControlReached: Bool?
+    let rateLimitReachedType: String?
     let fetchedAt: Date
 
     var fiveHour: LimitWindow? { windows.first { $0.kind == .fiveHour } }
     var weekly: LimitWindow? { windows.first { $0.kind == .weekly } }
+
+    var isWorkspacePlan: Bool {
+        switch planType {
+        case "team", "business", "self_serve_business_prolite", "self_serve_business_usage_based",
+             "ent26", "enterprise", "enterprise_cbp_automation", "enterprise_cbp_usage_based",
+             "edu", "edu_plus", "edu_pro":
+            return true
+        default:
+            return false
+        }
+    }
+
+    var planDisplayName: String? {
+        guard let planType else { return nil }
+        switch planType {
+        case "team", "business", "self_serve_business_prolite", "self_serve_business_usage_based":
+            return "Business"
+        case "ent26", "enterprise", "enterprise_cbp_automation", "enterprise_cbp_usage_based":
+            return "Enterprise"
+        case "edu", "edu_plus", "edu_pro":
+            return "Edu"
+        case "prolite":
+            return "Pro Lite"
+        case "promax":
+            return "Pro Max"
+        default:
+            return planType.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    var blockedUsageMessage: String? {
+        switch rateLimitReachedType {
+        case "workspace_owner_credits_depleted":
+            return "Workspace AI credits are depleted. Contact your workspace owner."
+        case "workspace_member_credits_depleted":
+            return "Your AI credits are depleted. Contact your workspace owner."
+        case "workspace_owner_usage_limit_reached":
+            return "The workspace spending limit has been reached. Contact your workspace owner."
+        case "workspace_member_usage_limit_reached":
+            return "Your spending limit has been reached. Contact your workspace owner."
+        default:
+            if spendControlReached == true {
+                return "A spending limit has been reached. Contact your workspace owner."
+            }
+            if ordinaryUsageAllowed == false {
+                return "Included Codex usage is currently blocked."
+            }
+            return nil
+        }
+    }
 }
 
 enum CodexMeterError: LocalizedError {

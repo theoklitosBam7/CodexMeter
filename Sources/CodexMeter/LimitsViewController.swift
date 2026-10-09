@@ -97,8 +97,15 @@ final class LimitsViewController: NSViewController {
 
         if let snapshot = state.snapshot {
             addLimits(snapshot)
-            addSeparator()
-            addResets(snapshot)
+            if snapshot.isWorkspacePlan || snapshot.credits != nil || snapshot.individualLimit != nil {
+                addSeparator()
+                addAICredits(snapshot)
+            }
+            if !snapshot.isWorkspacePlan || snapshot.availableResetCount > 0 ||
+                snapshot.resetCredits?.contains(where: \.isAvailable) == true {
+                addSeparator()
+                addResets(snapshot)
+            }
         } else if state.isLoading {
             let row = NSStackView()
             row.orientation = .horizontal
@@ -141,8 +148,8 @@ final class LimitsViewController: NSViewController {
         titleBox.alignment = .leading
         titleBox.spacing = 4
         titleBox.addArrangedSubview(makeLabel("Codex limits", size: 17, weight: .semibold))
-        if let plan = state.snapshot?.planType {
-            titleBox.addArrangedSubview(makeLabel("\(plan.capitalized) plan", size: 12, color: .secondaryLabelColor))
+        if let plan = state.snapshot?.planDisplayName {
+            titleBox.addArrangedSubview(makeLabel("\(plan) plan", size: 12, color: .secondaryLabelColor))
         }
         row.addArrangedSubview(titleBox)
 
@@ -173,17 +180,15 @@ final class LimitsViewController: NSViewController {
             addMainView(makeLimitView(window, now: now))
         }
 
-        if snapshot.windows.isEmpty {
+        if snapshot.windows.isEmpty && !snapshot.isWorkspacePlan &&
+            snapshot.credits == nil && snapshot.individualLimit == nil {
             addMainView(makeWrappedLabel(
                 "No rate-limit windows were returned by this account.",
                 color: .secondaryLabelColor
             ))
         }
-        if snapshot.ordinaryUsageAllowed == false {
-            addMainView(makeWrappedLabel(
-                "Included Codex usage is currently blocked.",
-                color: .systemOrange
-            ))
+        if let message = snapshot.blockedUsageMessage {
+            addMainView(makeWrappedLabel(message, color: .systemOrange))
         }
     }
 
@@ -237,6 +242,69 @@ final class LimitsViewController: NSViewController {
         return box
     }
 
+    private func addAICredits(_ snapshot: UsageSnapshot) {
+        let heading = NSStackView()
+        heading.orientation = .horizontal
+        heading.addArrangedSubview(makeLabel("AI credits", weight: .medium))
+        heading.addArrangedSubview(flexibleSpacer())
+
+        let balanceText: String
+        if snapshot.credits?.unlimited == true {
+            balanceText = "Unlimited"
+        } else if let balance = snapshot.credits?.balance {
+            balanceText = "\(balance) credits"
+        } else if snapshot.credits?.hasCredits == true {
+            balanceText = "Available, balance unavailable"
+        } else if snapshot.credits?.hasCredits == false {
+            balanceText = "No credits available"
+        } else {
+            balanceText = "Balance unavailable"
+        }
+        heading.addArrangedSubview(makeLabel(balanceText, weight: .semibold))
+        addMainView(heading)
+
+        if snapshot.credits?.hasCredits == false && snapshot.credits?.unlimited != true &&
+            snapshot.credits?.balance != nil {
+            addMainView(makeLabel("No AI credits available.", size: 11, color: .secondaryLabelColor))
+        }
+        if snapshot.credits == nil {
+            addMainView(makeWrappedLabel(
+                "Codex CLI did not return AI credit data for this account.",
+                color: .secondaryLabelColor
+            ))
+        }
+
+        if let limit = snapshot.individualLimit {
+            let box = NSStackView()
+            box.orientation = .vertical
+            box.alignment = .leading
+            box.spacing = 8
+            box.addArrangedSubview(makeLabel("Your spending limit", weight: .medium))
+            box.addArrangedSubview(makeLabel("\(limit.formattedUsed) of \(limit.limit) credits used"))
+            box.addArrangedSubview(makeLabel(
+                "\(limit.clampedRemainingPercent)% left", weight: .semibold,
+                color: limit.clampedRemainingPercent < 15 ? .systemRed : .labelColor
+            ))
+
+            let progress = NSProgressIndicator()
+            progress.style = .bar
+            progress.isIndeterminate = false
+            progress.minValue = 0
+            progress.maxValue = 100
+            progress.doubleValue = Double(limit.clampedRemainingPercent)
+            box.addArrangedSubview(progress)
+            progress.translatesAutoresizingMaskIntoConstraints = false
+            progress.widthAnchor.constraint(equalTo: box.widthAnchor).isActive = true
+
+            box.addArrangedSubview(makeLabel(
+                "Resets in \(limit.resetsAt.timeIntervalSinceNow.compactCountdown)",
+                size: 11, color: .secondaryLabelColor
+            ))
+            box.addArrangedSubview(makeLabel(formatFullDate(limit.resetsAt), size: 11, color: .secondaryLabelColor))
+            addMainView(box)
+        }
+    }
+
     private func addResets(_ snapshot: UsageSnapshot) {
         let heading = NSStackView()
         heading.orientation = .horizontal
@@ -260,10 +328,6 @@ final class LimitsViewController: NSViewController {
                 "Your Codex version reports the reset count, but not per-reset IDs or expiration details. Update Codex CLI to enable selection and expiry display.",
                 color: .secondaryLabelColor
             ))
-        }
-
-        if let balance = snapshot.creditsBalance {
-            addMainView(makeLabel("Usage credits: \(balance)", size: 11, color: .secondaryLabelColor))
         }
     }
 
