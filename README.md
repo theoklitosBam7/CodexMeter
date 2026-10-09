@@ -1,6 +1,6 @@
 # Codex Meter
 
-Codex Meter is a native macOS menu-bar app that shows usage limits and banked reset credits for the Codex CLI account on your Mac. You can also use the app to consume an available reset credit.
+Codex Meter is a native macOS menu-bar app that shows usage limits, AI credits, and banked resets for the Codex CLI account on your Mac. It supports personal plans and Business, Enterprise, and Edu workspace plans. You can also use the app to consume an available banked reset.
 
 ## Requirements
 
@@ -21,7 +21,11 @@ The build script compiles for the current Mac architecture and creates a locally
 
 ## Use
 
-Select the gauge icon in the menu bar to open the limits panel. Codex Meter displays the 5-hour and weekly usage windows, reset times, and banked reset credits when the Codex CLI provides that data.
+Select the gauge icon in the menu bar to open the limits panel. Codex Meter displays the 5-hour and weekly usage windows, reset times, and banked resets when the Codex CLI provides that data.
+
+The separate **AI credits** section shows the reported balance or credit availability, including unlimited status. If Codex returns an individual spending limit, the app shows credits used, the limit, the remaining percentage, and the reset time. Messages distinguish depleted workspace or member credits from workspace or member spending limits.
+
+The app reads only the data returned by your signed-in Codex CLI. It does not fetch workspace billing data or calculate a shared workspace balance. Missing balances and spending limits remain unknown. AI credits can appear without 5-hour or weekly limits. For workspace plans, the app hides the banked-resets section unless resets are available. Update Codex CLI if your version does not return credit or spending-limit data.
 
 Select **Refresh** to fetch the latest data. The app also refreshes when the displayed data is more than a minute old. Countdown labels update while the panel is open.
 
