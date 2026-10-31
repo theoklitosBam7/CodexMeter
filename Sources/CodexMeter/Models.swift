@@ -16,6 +16,23 @@ struct LimitWindow: Identifiable, Sendable {
     var remainingPercent: Int { max(0, min(100, 100 - usedPercent)) }
 }
 
+struct UsageAlertTracker {
+    private var sentAlerts: Set<String> = []
+
+    mutating func shouldAlert(for window: LimitWindow, threshold: Int) -> Bool {
+        guard threshold > 0 else { return false }
+        let period = window.resetsAt.map { String($0.timeIntervalSince1970) } ?? "unknown"
+        let identifier = "\(window.kind.rawValue)-\(period)-\(threshold)"
+        guard window.usedPercent >= threshold else {
+            if window.resetsAt == nil {
+                sentAlerts.remove(identifier)
+            }
+            return false
+        }
+        return sentAlerts.insert(identifier).inserted
+    }
+}
+
 struct ResetCredit: Identifiable, Sendable {
     let id: String
     let resetType: String

@@ -76,6 +76,23 @@ struct LimitsViewChecks {
 
         checkWorkspaceViews(state: state, controller: controller, window: window)
 
+        state.errorMessage = "Reset failed"
+        state.onChange?()
+        precondition(!labelTexts(controller.view).contains { $0.hasPrefix("Stale · Updated ") })
+        state.refreshFailed = true
+        state.errorMessage = "Refresh failed"
+        state.onChange?()
+        precondition(labelTexts(controller.view).contains { $0.hasPrefix("Stale · Updated ") })
+        precondition(labelTexts(controller.view).contains("Refresh failed"))
+        state.errorMessage = "Reset failed"
+        state.onChange?()
+        precondition(labelTexts(controller.view).contains { $0.hasPrefix("Stale · Updated ") })
+        state.refreshFailed = false
+        state.errorMessage = nil
+        state.onChange?()
+        precondition(!labelTexts(controller.view).contains { $0.hasPrefix("Stale · Updated ") })
+        print("PASS: freshness tracks refresh failures independently of reset errors")
+
         state.snapshot = nil
         state.isLoading = false
         state.errorMessage = "Codex CLI was not found. Set its path in Settings."
