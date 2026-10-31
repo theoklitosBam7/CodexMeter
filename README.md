@@ -31,7 +31,7 @@ The menu bar shows the remaining percentage for the 5-hour window. In **Settings
 
 Codex Meter refreshes at launch and at the interval set in **Settings**. The default is one minute; the stepper accepts intervals from 1 to 60 minutes. It also refreshes when you open the panel if the last successful update is more than one minute old. Select **Refresh** to fetch the latest data immediately. The panel shows the time of the last successful update and marks data as stale after twice the configured interval or after a refresh error. The menu-bar tooltip also marks stale data. Countdown labels update while the panel is open.
 
-In **Settings**, you can enable separate alerts for the 5-hour and weekly windows at 80%, 90%, or 95% used. Alerts are off by default and require macOS notification permission. The app checks usage at each refresh, so it must be running to send alerts. It sends an alert once per window and threshold during an app session, and can alert again after a restart.
+In **Settings**, you can enable separate alerts for the 5-hour and weekly windows at 80%, 90%, or 95% used. Alerts are off by default and require macOS notification permission. The app checks usage at each refresh, so it must be running to send alerts. It sends an alert once per window, reset period, and threshold during an app session, and can alert again after a restart. If Codex does not provide a reset time, an alert can fire again after usage falls below its threshold and rises back above it.
 
 To consume a banked reset, select **Use** beside an available credit and confirm. This changes your Codex reset schedule. Codex Meter refreshes the displayed data after the reset request succeeds.
 

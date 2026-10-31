@@ -9,7 +9,32 @@ struct UsageParsingChecks {
         try checkPersonalPlanCompatibility()
         try checkMissingAndInvalidData()
         try checkUsedCreditFormatting()
+        checkAlertDeduplication()
         print("PASS: all usage parsing checks")
+    }
+
+    private static func checkAlertDeduplication() {
+        var tracker = UsageAlertTracker()
+        let reset = Date(timeIntervalSince1970: 1_800_000_000)
+        func window(_ used: Int, kind: LimitWindow.Kind = .fiveHour, resetAt: Date? = nil) -> LimitWindow {
+            LimitWindow(kind: kind, usedPercent: used, durationMinutes: nil, resetsAt: resetAt ?? reset)
+        }
+        precondition(tracker.shouldAlert(for: window(95), threshold: 80))
+        precondition(tracker.shouldAlert(for: window(95), threshold: 90))
+        precondition(!tracker.shouldAlert(for: window(95), threshold: 80))
+        precondition(!tracker.shouldAlert(for: window(70), threshold: 80))
+        precondition(!tracker.shouldAlert(for: window(95), threshold: 80))
+        precondition(tracker.shouldAlert(for: window(95, kind: .weekly), threshold: 80))
+        precondition(tracker.shouldAlert(for: window(95, resetAt: reset.addingTimeInterval(300)), threshold: 80))
+        precondition(!tracker.shouldAlert(for: window(95), threshold: 0))
+        func windowWithoutReset(_ used: Int) -> LimitWindow {
+            LimitWindow(kind: .fiveHour, usedPercent: used, durationMinutes: nil, resetsAt: nil)
+        }
+        precondition(tracker.shouldAlert(for: windowWithoutReset(95), threshold: 80))
+        precondition(!tracker.shouldAlert(for: windowWithoutReset(95), threshold: 80))
+        precondition(!tracker.shouldAlert(for: windowWithoutReset(70), threshold: 80))
+        precondition(tracker.shouldAlert(for: windowWithoutReset(95), threshold: 80))
+        print("PASS: alerts are deduplicated and re-armed when a reset time is unavailable")
     }
 
     private static func checkWorkspacePlans() throws {

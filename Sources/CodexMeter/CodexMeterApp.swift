@@ -22,7 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var globalMouseMonitor: Any?
     private var localEventMonitor: Any?
     private var refreshTimer: Timer?
-    private var alertedWindows: [String: String] = [:]
+    private var freshnessTimer: Timer?
+    private var alertTracker = UsageAlertTracker()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -48,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         state.onUsageFetched = { [weak self] snapshot in self?.checkAlerts(snapshot) }
         state.refresh()
         scheduleRefresh()
+        freshnessTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.updateStatusItem()
+        }
+        if let freshnessTimer {
+            RunLoop.main.add(freshnessTimer, forMode: .common)
+        }
 
         popover.behavior = .transient
         popover.animates = true
@@ -79,16 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func checkAlerts(_ snapshot: UsageSnapshot) {
         for (window, threshold) in [(snapshot.fiveHour, state.fiveHourAlert), (snapshot.weekly, state.weeklyAlert)] {
-            guard let window, threshold > 0 else { continue }
+            guard let window, alertTracker.shouldAlert(for: window, threshold: threshold) else { continue }
             let key = window.kind.rawValue
-            if window.usedPercent < threshold {
-                alertedWindows.removeValue(forKey: key)
-                continue
-            }
             let period = window.resetsAt.map { String($0.timeIntervalSince1970) } ?? "unknown"
             let alertID = "\(period)-\(threshold)"
-            guard alertedWindows[key] != alertID else { continue }
-            alertedWindows[key] = alertID
             let content = UNMutableNotificationContent()
             content.title = "Codex \(key) usage alert"
             content.body = "\(window.usedPercent)% used. \(window.remainingPercent)% left."
@@ -161,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         stopDismissalMonitors()
         refreshTimer?.invalidate()
+        freshnessTimer?.invalidate()
     }
 
     private func templateImage(named symbol: String) -> NSImage? {

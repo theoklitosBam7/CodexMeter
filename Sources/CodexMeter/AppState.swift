@@ -4,6 +4,7 @@ final class AppState {
     var snapshot: UsageSnapshot?
     var isLoading = false
     var errorMessage: String?
+    var refreshFailed = false
     var resetMessage: String?
 
     var onChange: (() -> Void)?
@@ -29,7 +30,7 @@ final class AppState {
 
     var isSnapshotStale: Bool {
         guard let snapshot else { return false }
-        return errorMessage != nil || Date().timeIntervalSince(snapshot.fetchedAt) > Double(refreshIntervalMinutes * 120)
+        return refreshFailed || Date().timeIntervalSince(snapshot.fetchedAt) > Double(refreshIntervalMinutes * 120)
     }
 
     var menuWindow: String {
@@ -66,9 +67,11 @@ final class AppState {
                 switch result {
                 case .success(let value):
                     self.snapshot = value
+                    self.refreshFailed = false
                     self.errorMessage = nil
                     self.onUsageFetched?(value)
                 case .failure(let error):
+                    self.refreshFailed = true
                     self.errorMessage = error.localizedDescription
                 }
                 self.isLoading = false
