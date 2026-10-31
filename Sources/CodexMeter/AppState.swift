@@ -7,6 +7,35 @@ final class AppState {
     var resetMessage: String?
 
     var onChange: (() -> Void)?
+    var onUsageFetched: ((UsageSnapshot) -> Void)?
+
+    var fiveHourAlert: Int {
+        get { UserDefaults.standard.integer(forKey: "fiveHourAlert") }
+        set { UserDefaults.standard.set(newValue, forKey: "fiveHourAlert") }
+    }
+
+    var weeklyAlert: Int {
+        get { UserDefaults.standard.integer(forKey: "weeklyAlert") }
+        set { UserDefaults.standard.set(newValue, forKey: "weeklyAlert") }
+    }
+
+    var refreshIntervalMinutes: Int {
+        get {
+            let value = UserDefaults.standard.integer(forKey: "refreshIntervalMinutes")
+            return value > 0 ? min(value, 60) : 1
+        }
+        set { UserDefaults.standard.set(max(1, min(newValue, 60)), forKey: "refreshIntervalMinutes") }
+    }
+
+    var isSnapshotStale: Bool {
+        guard let snapshot else { return false }
+        return errorMessage != nil || Date().timeIntervalSince(snapshot.fetchedAt) > Double(refreshIntervalMinutes * 120)
+    }
+
+    var menuWindow: String {
+        get { UserDefaults.standard.string(forKey: "menuWindow") ?? "5-hour" }
+        set { UserDefaults.standard.set(newValue, forKey: "menuWindow") }
+    }
 
     var codexPath: String {
         get { UserDefaults.standard.string(forKey: "codexPath") ?? "" }
@@ -38,6 +67,7 @@ final class AppState {
                 case .success(let value):
                     self.snapshot = value
                     self.errorMessage = nil
+                    self.onUsageFetched?(value)
                 case .failure(let error):
                     self.errorMessage = error.localizedDescription
                 }

@@ -9,15 +9,18 @@ final class LimitsViewController: NSViewController {
     private let stack = NSStackView()
     private var countdownTimer: Timer?
     private var renderedCredits: [ResetCredit] = []
+    private var intervalLabel: NSTextField?
 
     var onRequestClose: (() -> Void)?
     var onSnapshotChanged: ((UsageSnapshot?) -> Void)?
+    var onSettingsChanged: (() -> Void)?
 
     init(state: AppState) {
         self.state = state
         super.init(nibName: nil, bundle: nil)
         state.onChange = { [weak self] in
             self?.render()
+            self?.onSnapshotChanged?(self?.state.snapshot)
         }
     }
 
@@ -133,7 +136,6 @@ final class LimitsViewController: NSViewController {
 
         addSeparator()
         addMainView(makeFooter(state.snapshot))
-        onSnapshotChanged?(state.snapshot)
     }
 
     private func makeHeader() -> NSView {
@@ -368,7 +370,12 @@ final class LimitsViewController: NSViewController {
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 8
-        let updateText = snapshot.map { "Updated \(formatTime($0.fetchedAt))" } ?? "Not updated yet"
+        let updateText: String
+        if let snapshot {
+            updateText = "\(state.isSnapshotStale ? "Stale · " : "")Updated \(formatFullDate(snapshot.fetchedAt))"
+        } else {
+            updateText = "Not updated yet"
+        }
         row.addArrangedSubview(makeLabel(updateText, size: 11, color: .secondaryLabelColor))
         row.addArrangedSubview(flexibleSpacer())
 
@@ -409,19 +416,63 @@ final class LimitsViewController: NSViewController {
         state.useReset(credit)
     }
 
+    @objc private func intervalChanged(_ sender: NSStepper) {
+        intervalLabel?.stringValue = "\(sender.integerValue) min"
+    }
+
     @objc private func settingsPressed() {
         let alert = NSAlert()
         alert.messageText = "Settings"
-        alert.informativeText = "Codex CLI path. Leave this empty to auto-detect common install locations."
+        alert.informativeText = "Choose alert thresholds as percent used. Notifications require macOS permission."
         alert.alertStyle = .informational
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
-        field.placeholderString = "Auto-detect"
+        field.placeholderString = "Auto-detect Codex CLI path"
         field.stringValue = state.codexPath
-        alert.accessoryView = field
+        let fiveHour = NSPopUpButton()
+        let weekly = NSPopUpButton()
+        for popup in [fiveHour, weekly] {
+            popup.addItems(withTitles: ["Off", "80%", "90%", "95%"])
+        }
+        fiveHour.selectItem(withTitle: state.fiveHourAlert == 0 ? "Off" : "\(state.fiveHourAlert)%")
+        weekly.selectItem(withTitle: state.weeklyAlert == 0 ? "Off" : "\(state.weeklyAlert)%")
+        let menu = NSPopUpButton()
+        menu.addItems(withTitles: ["5-hour", "Weekly"])
+        menu.selectItem(withTitle: state.menuWindow)
+        let stepper = NSStepper()
+        stepper.minValue = 1
+        stepper.maxValue = 60
+        stepper.increment = 1
+        stepper.integerValue = state.refreshIntervalMinutes
+        stepper.target = self
+        stepper.action = #selector(intervalChanged(_:))
+        stepper.setAccessibilityLabel("Refresh interval in minutes")
+        let intervalValue = makeLabel("\(stepper.integerValue) min")
+        intervalLabel = intervalValue
+        let intervalRow = NSStackView(views: [intervalValue, stepper])
+        intervalRow.orientation = .horizontal
+        intervalRow.spacing = 8
+        let options = NSStackView(views: [
+            makeLabel("Codex CLI path"), field,
+            makeLabel("Refresh interval"), intervalRow,
+            makeLabel("5-hour alert"), fiveHour,
+            makeLabel("Weekly alert"), weekly,
+            makeLabel("Menu-bar window"), menu
+        ])
+        options.orientation = .vertical
+        options.alignment = .leading
+        options.spacing = 6
+        options.frame = NSRect(x: 0, y: 0, width: 360, height: 270)
+        field.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        alert.accessoryView = options
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         state.codexPath = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.fiveHourAlert = Int(fiveHour.titleOfSelectedItem?.replacingOccurrences(of: "%", with: "") ?? "") ?? 0
+        state.weeklyAlert = Int(weekly.titleOfSelectedItem?.replacingOccurrences(of: "%", with: "") ?? "") ?? 0
+        state.menuWindow = menu.titleOfSelectedItem ?? "5-hour"
+        state.refreshIntervalMinutes = stepper.integerValue
+        onSettingsChanged?()
         state.refresh()
     }
 
